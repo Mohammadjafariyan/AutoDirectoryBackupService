@@ -1,3 +1,5 @@
 dotnet publish -c Release -r win-x64 --self-contained true
 
-sc create AutoBackupService binPath= "C:\Services\AutoBackupService\AutoBackupService.exe"
+sc create AutoBackupService binPath= "C:\App\AutoFileBackup\AutoBackupService.exe"
+
+sc start AutoBackupService

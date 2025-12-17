@@ -1,4 +1,4 @@
-namespace AutoBackupService;
+﻿namespace AutoBackupService;
 
 public class Worker : BackgroundService
 {
@@ -15,30 +15,22 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            if (_logger.IsEnabled(LogLevel.Information))
-            {
-                _logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
-            }
+        _logger.LogInformation("Backup service started at {time}", DateTimeOffset.Now);
 
-            Start();
+        Initialize();
 
-            await Task.Delay(1000, stoppingToken);
-        }
+        await Task.Delay(Timeout.Infinite, stoppingToken);
     }
 
-    public void Start()
+    private void Initialize()
     {
         LoadConfiguration();
-
-        Console.WriteLine("Auto Folder Backup Started...");
         ValidateDirectories();
-        InitialBackup();
-        StartWatcher();
 
-        Console.WriteLine("Listening for changes... Press ENTER to exit.");
-        Console.ReadLine();
+        // Run initial backup in background
+        _ = Task.Run(() => InitialBackup());
+
+        StartWatcher();
     }
 
     private void LoadConfiguration()
@@ -87,25 +79,22 @@ public class Worker : BackgroundService
         _watcher.Changed += OnChanged;
         _watcher.Renamed += OnRenamed;
         _watcher.Error += OnError;
-
         _watcher.EnableRaisingEvents = true;
 
-        _logger.LogInformation("FileSystemWatcher started.");
+        _logger.LogInformation("FileSystemWatcher started on {path}", SourcePath);
     }
-
 
     private void OnChanged(object sender, FileSystemEventArgs e)
     {
-        if (Directory.Exists(e.FullPath))
-            return;
+        if (Directory.Exists(e.FullPath)) return;
 
-        _logger.LogInformation("Detected change: {File}", e.FullPath);
+        _logger.LogInformation("Detected change: {file}", e.FullPath);
         BackupFile(e.FullPath);
     }
 
     private void OnRenamed(object sender, RenamedEventArgs e)
     {
-        _logger.LogInformation("Renamed: {Old} -> {New}", e.OldFullPath, e.FullPath);
+        _logger.LogInformation("Renamed: {old} -> {new}", e.OldFullPath, e.FullPath);
         BackupFile(e.FullPath);
     }
 
@@ -127,25 +116,20 @@ public class Worker : BackgroundService
         {
             string relativePath = Path.GetRelativePath(SourcePath, sourceFile);
             string backupFile = Path.Combine(BackupPath, relativePath);
-            string backupDir = Path.GetDirectoryName(backupFile)!;
-
-            Directory.CreateDirectory(backupDir);
+            Directory.CreateDirectory(Path.GetDirectoryName(backupFile)!);
 
             if (File.Exists(backupFile))
             {
-                var sourceTime = File.GetLastWriteTimeUtc(sourceFile);
-                var backupTime = File.GetLastWriteTimeUtc(backupFile);
-
-                if (sourceTime <= backupTime)
-                    return; // no change
+                if (File.GetLastWriteTimeUtc(sourceFile)
+                    <= File.GetLastWriteTimeUtc(backupFile))
+                    return;
             }
 
             CopyWithRetry(sourceFile, backupFile);
-            Console.WriteLine($"Backed up: {relativePath}");
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Error backing up {sourceFile}: {ex.Message}");
+            // logging handled by caller
         }
     }
 
